@@ -1,0 +1,151 @@
+% lane_dodger.m - top-down car dodging game for GNU Octave (6+ recommended)
+% Run with:  lane_dodger
+% Controls:  left/right arrows or A/D to steer, Space/Enter to restart, Esc to quit.
+% Steering is applied on each key press (key repeat keeps it going), so it
+% does not rely on key-release events.
+1;  % marks this file as a script (functions below are defined before use)
+
+% ---------- helpers ----------
+function hs = make_car(col)
+  hs(1) = patch([0 1 1 0], [0 0 1 1], col, 'EdgeColor', 'k');
+  hs(2) = patch([0 1 1 0], [0 0 1 1], [0.81 0.91 0.93], 'EdgeColor', 'none');
+  hs(3) = patch([0 1 1 0], [0 0 1 1], [0.81 0.91 0.93], 'EdgeColor', 'none');
+end
+
+function place_car(hs, x, y, w, h)
+  set(hs(1), 'XData', [x x+w x+w x],         'YData', [y y y+h y+h]);
+  set(hs(2), 'XData', [x+5 x+w-5 x+w-5 x+5], 'YData', y + h*[.20 .20 .38 .38]);
+  set(hs(3), 'XData', [x+6 x+w-6 x+w-6 x+6], 'YData', y + h*[.68 .68 .78 .78]);
+end
+
+function key_press(~, evt)
+  global S
+  switch evt.Key
+    case {'leftarrow', 'a'}
+      S.px = max(S.road_l + 4, S.px - 14);
+    case {'rightarrow', 'd'}
+      S.px = min(S.road_r - S.w - 4, S.px + 14);
+    case {'space', 'return'}
+      if S.over, S.restart = true; end
+    case 'escape'
+      S.quit = true;
+  end
+end
+
+function reset_game()
+  global S
+  % remove old obstacle graphics
+  for i = 1:numel(S.obs)
+    delete(S.obs{i}.hs(ishghandle(S.obs{i}.hs)));
+  end
+  S.obs = {};
+  S.px = 180 - 18;  S.py = 560 - 110;  S.w = 36;  S.h = 64;
+  S.speed = 5;  S.offset = 0;  S.score = 0;  S.timer = 0;
+  S.over = false;  S.restart = false;
+  set(S.msg, 'String', '');
+end
+
+function update_game(dt)
+  global S
+
+  % difficulty ramp and scrolling
+  S.speed  = 5 + S.score / 400;
+  S.offset = mod(S.offset + S.speed * dt, 80);
+  S.score  = S.score + S.speed * dt * 0.2;
+
+  % spawn obstacles above the screen
+  S.timer -= dt;
+  if S.timer <= 0
+    isCar = rand() < 0.7;
+    if isCar, w = 36; h = 64; else, w = 28; h = 28; end
+    o.x = S.road_l + 8 + rand() * (S.road_r - S.road_l - w - 16);
+    o.y = -80;  o.w = w;  o.h = h;  o.car = isCar;
+    if isCar
+      o.hs = make_car(hsv2rgb([rand() 0.6 0.8]));
+    else
+      o.hs = patch([0 1 1 0], [0 0 1 1], [0.85 0.38 0.17], 'EdgeColor', 'k');
+    end
+    S.obs{end+1} = o;
+    S.timer = max(22, 70 - S.speed * 4) * (0.6 + rand() * 0.8);
+  end
+
+  % move obstacles, test collisions, cull the ones that left the screen
+  m = 5;  % forgiving hitbox margin
+  for i = numel(S.obs):-1:1
+    o = S.obs{i};
+    o.y += (S.speed * 0.6 + 1.5) * dt;
+    S.obs{i} = o;
+    if S.px + m < o.x + o.w && S.px + S.w - m > o.x && ...
+       S.py + m < o.y + o.h && S.py + S.h - m > o.y
+      S.over = true;
+    end
+    if o.y > 560 + 80
+      delete(o.hs);
+      S.obs(i) = [];
+    end
+  end
+end
+
+function render()
+  global S
+  for k = 1:numel(S.dash)
+    y = -80 + 80*(k-1) + S.offset;
+    set(S.dash(k), 'YData', [y y y+40 y+40]);
+  end
+  for i = 1:numel(S.obs)
+    o = S.obs{i};
+    if o.car
+      place_car(o.hs, o.x, o.y, o.w, o.h);
+    else
+      set(o.hs, 'XData', [o.x o.x+o.w o.x+o.w o.x], ...
+                'YData', [o.y o.y o.y+o.h o.y+o.h]);
+    end
+  end
+  place_car(S.player, S.px, S.py, S.w, S.h);
+  set(S.txt, 'String', sprintf('Score %d', floor(S.score)));
+  if S.over
+    set(S.msg, 'String', sprintf('Crash!  Score %d\nSpace to retry', floor(S.score)));
+  end
+end
+
+% ---------- setup ----------
+global S
+S.road_l = 30;  S.road_r = 330;
+S.quit = false;  S.obs = {};
+
+fig = figure('Name', 'Lane Dodger', 'NumberTitle', 'off', 'MenuBar', 'none', ...
+             'Color', [0.25 0.49 0.29], 'Position', [300 100 360 560], ...
+             'KeyPressFcn', @key_press);
+ax = axes('Parent', fig, 'Position', [0 0 1 1], 'XLim', [0 360], ...
+          'YLim', [0 560], 'YDir', 'reverse', 'Visible', 'off');
+hold(ax, 'on');
+
+% static road
+patch([S.road_l S.road_r S.road_r S.road_l], [0 0 560 560], [0.20 0.22 0.23], 'EdgeColor', 'none');
+patch([S.road_l S.road_l+4 S.road_l+4 S.road_l], [0 0 560 560], [0.91 0.91 0.91], 'EdgeColor', 'none');
+patch([S.road_r-4 S.road_r S.road_r S.road_r-4], [0 0 560 560], [0.91 0.91 0.91], 'EdgeColor', 'none');
+
+% scrolling center dashes
+for k = 1:8
+  S.dash(k) = patch([178 182 182 178], [0 0 40 40], [0.95 0.76 0.19], 'EdgeColor', 'none');
+end
+
+S.player = make_car([0.84 0.20 0.17]);
+S.txt = text(12, 26, 'Score 0', 'Color', 'w', 'FontSize', 14, 'FontWeight', 'bold');
+S.msg = text(180, 270, '', 'Color', 'w', 'FontSize', 18, 'FontWeight', 'bold', ...
+             'HorizontalAlignment', 'center', 'BackgroundColor', [0 0 0]);
+
+reset_game();
+
+% ---------- main loop (delta-time based, ~60 fps target) ----------
+t_prev = tic;
+while ishghandle(fig) && ~S.quit
+  dt = min(toc(t_prev) * 60, 3);
+  t_prev = tic;
+  if S.restart, reset_game(); end
+  if ~S.over, update_game(dt); end
+  render();
+  drawnow;
+  pause(0.005);
+end
+if ishghandle(fig), close(fig); end
