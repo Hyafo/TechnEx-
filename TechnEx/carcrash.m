@@ -4,51 +4,17 @@ function carcrash
     clc; close all;
     graphics_toolkit('qt');
 
-    % Display the game title
-    disp('%%%%%%%%%%%%%%%%%%%%%');
-    disp('%     CAR CRASH     %');
-    disp('%%%%%%%%%%%%%%%%%%%%%');
-    fprintf('\n');
-
-    % Game rules
-    fprintf('RULES:\n');
-    fprintf('- Move the car with the LEFT and RIGHT arrow keys.\n');
-    fprintf('- Avoid the obstacles.\n');
-    fprintf('- The longer you survive, the higher your score.\n');
-    fprintf('- Reach the target score to win the game.\n');
-    fprintf('- Press P to pause/resume the game.\n');
-    fprintf('- Press Q to stop the game.\n');
-    fprintf('\n');
-
     best_score = 0;
-    play_again = true;
 
-    while play_again
+    while true
 
-        % Choose the difficulty
-        fprintf('Select difficulty. Options are:\n');
-        fprintf(' (1) Easy\n');
-        fprintf(' (2) Medium\n');
-        fprintf(' (3) Hard\n');
-        fprintf(' (4) Impossible\n');
+        % Start a new game (the difficulty is chosen in the window)
+        [score, game_result] = playGame(best_score);
 
-        fprintf('\n');
-        difficulty_selection = input('Your choice: ');
-        fprintf('\n');
-
-        % Check that the difficulty is valid
-        while isempty(difficulty_selection) || ...
-              ~ismember(difficulty_selection, [1 2 3 4])
-
-            fprintf('Please choose 1, 2, 3 or 4.\n');
-            difficulty_selection = input('Your choice: ');
-            fprintf('\n');
-
+        % The player clicked "Quit" (or closed the window)
+        if strcmp(game_result, 'exit')
+            break;
         end
-
-        % Start a new game
-        [score, game_result] = playGame( ...
-            difficulty_selection, best_score);
 
         % Display the result
         if strcmp(game_result, 'win')
@@ -77,19 +43,12 @@ function carcrash
 
         end
 
-        % Ask whether the player wants to replay
-        fprintf('\n');
-
-        answer = input('Replay ? (o/n) : ', 's');
-        fprintf('\n');
-
-        play_again = ~isempty(answer) && ...
-                     any(lower(answer(1)) == ['o' 'y']);
-
+        % Close the window, the menu comes back with the next game
         close all;
 
     end
 
+    close all;
     fprintf('Thanks for playing ! Best score : %.1f\n', best_score);
 
 end
@@ -99,55 +58,104 @@ end
 % Runs one game
 % ============================================================
 
-function [score, game_result] = playGame( ...
-    difficulty_selection, best_score)
+function [score, game_result] = playGame(best_score)
 
     % The complete game area
     land_dimensions = [-50 50 0 100];
 
-    % --------------------------------------------------------
-    % Car
-    % --------------------------------------------------------
+    % Loading all textures once
+    % If a file is missing, a plain colored placeholder is used
 
-    car.pos  = [0; 5];
-    car.size = [8 12];
-    car.v    = 120;
+    tex.bg     = loadTexture('background.png',       [0.25 0.25 0.25]);
+    tex.car    = loadTexture('car.png',              [0.10 0.30 0.80]);
+    tex.obs{1} = loadTexture('obstacar.png',     [0.90 0.10 0.10]);
+    tex.obs{2} = loadTexture('deer.png',  [0.55 0.30 0.10]);
+    tex.obs{3} = loadTexture('rock.png',    [0.40 0.40 0.40]);
 
-    % Load the car texture
-    folder = fileparts(mfilename('fullpath'));
-    [img, map, alpha] = imread(fullfile(folder, 'assets', 'car.png'));
-    if ~isempty(map)                       % Indexed PNG -> RGB
-       img = ind2rgb(img, map);
-    end
-    if isempty(alpha)                      % No transparency
-        alpha = ones(size(img, 1), size(img, 2));
-    else
-        alpha = double(alpha) / double(intmax(class(alpha)));   % Values between 1 and 0
-    end
-    car.img   = flipud(img);               % Flipped upside-down
-    car.alpha = flipud(alpha);
-    car.size = [8, 8 * size(img,1)/size(img,2)];
-
-    % Load the background texture
-    [bg_img, bg_map] = imread(fullfile(folder, 'assets', 'background.png'));
-    if ~isempty(bg_map)                    % Indexed PNG -> RGB
-        bg_img = ind2rgb(bg_img, bg_map);
-    end
-    bg.img = flipud(bg_img);               % Flipped upside-down
+    % Player car
+    car.size = [6, 6 * tex.car.ratio];   % Width and height
+    car.pos  = [0; 5 + car.size(2)/2];
+    car.v    = 80;                       % Horizontal speed
 
     % Obstacles contain:
-    % [x, y, width, height, type]
-    %
-    % type 1 = car
-    % type 2 = animal
-    % type 3 = rock
-
-    obstacles = zeros(0, 5);
-
+    % [x, y, width, height, type, graphics handle]
+    % type 1 = car; type 2 = animal; type 3 = rock
+    obstacles = zeros(0, 6);
     spawn_timer = 0;
     score = 0;
-
     game_result = 'quit';
+
+
+    % --------------------------------------------------------
+    % Create game window
+    % --------------------------------------------------------
+
+    fig = figure( ...
+        'KeyPressFcn', @onKeyDown, ...
+        'KeyReleaseFcn', @onKeyUp, ...
+        'WindowButtonDownFcn', @onMouseDown, ...
+        'Name', 'Car Crash', ...
+        'NumberTitle', 'off', ...
+        'Resize', 'on');
+
+    setappdata(fig, 'keys', ...
+        struct('left', false, ...
+               'right', false, ...
+               'pause', false, ...
+               'quit', false));
+    setappdata(fig, 'click', []);
+
+    crashed = false;
+    won = false;
+    paused = false;
+    quit_game = false;
+
+    % --------------------------------------------------------
+    % Creating the scene (axes, background, car, title)
+    % --------------------------------------------------------
+
+    ax = axes('Parent', fig, 'Position', [0 0 1 1]);
+    hold(ax, 'on');
+
+    % Static background: drawn once, never touched again
+    image([-50 50], [0 100], tex.bg.img, ...
+          'Parent', ax, 'AlphaData', tex.bg.alpha);
+
+    % Player car: only its XData changes later
+    hCar = image( ...
+        [car.pos(1) - car.size(1)/2, car.pos(1) + car.size(1)/2], ...
+        [car.pos(2) - car.size(2)/2, car.pos(2) + car.size(2)/2], ...
+        tex.car.img, 'Parent', ax, 'AlphaData', tex.car.alpha);
+
+    set(ax, 'YDir', 'normal');
+    axis(ax, land_dimensions);
+    axis(ax, 'square');
+    axis(ax, 'off');
+    set(fig, 'Color', 'k');
+
+    hScore = text(-48, 97, '', 'Parent', ax, ...
+              'Color', 'w', ...
+              'FontSize', 12, ...
+              'FontWeight', 'bold', ...
+              'VerticalAlignment', 'top');
+
+    % --------------------------------------------------------
+    % Menu
+    % --------------------------------------------------------
+
+    [difficulty_selection, hMsg] = showMenu(fig, ax);
+
+    if difficulty_selection == 0          % Quit / window closed
+        game_result = 'exit';
+        return;
+    end
+
+    delete(hMsg);
+
+    % Forget any key pressed during the menu
+    setappdata(fig, 'keys', ...
+        struct('left', false, 'right', false, ...
+               'pause', false, 'quit', false));
 
     % --------------------------------------------------------
     % Difficulty
@@ -190,46 +198,19 @@ function [score, game_result] = playGame( ...
     end
 
     % Random time before first obstacle
-    next_spawn = spawn_min + ...
-                 (spawn_max - spawn_min) * rand;
-
-    % --------------------------------------------------------
-    % Create game window
-    % --------------------------------------------------------
-
-    fig = figure( ...
-        'KeyPressFcn', @onKeyDown, ...
-        'KeyReleaseFcn', @onKeyUp, ...
-        'Name', 'Car Crash', ...
-        'NumberTitle', 'off', ...
-        'Resize', 'on');
-
-    setappdata(fig, 'keys', ...
-        struct('left', false, ...
-               'right', false, ...
-               'pause', false, ...
-               'quit', false));
-
-    dt = 0.02;
-
-    crashed = false;
-    won = false;
-    paused = false;
-    quit_game = false;
-
-    % --------------------------------------------------------
-    % Display rules
-    % --------------------------------------------------------
-
-    showRules(fig, difficulty_selection, winning_score);
-
-    pause(2);
+    next_spawn = spawn_min + (spawn_max - spawn_min) * rand;
 
     % --------------------------------------------------------
     % Main game loop
     % --------------------------------------------------------
 
+    t_last = tic;      % real time measurement
+
     while ishandle(fig)
+
+        % Real elapsed time
+        dt = min(toc(t_last), 0.05);
+        t_last = tic;
 
         keys = getappdata(fig, 'keys');
 
@@ -256,14 +237,9 @@ function [score, game_result] = playGame( ...
             setappdata(fig, 'keys', keys);
 
             if paused
-
-                showPause(fig, score);
-
+                hMsg = showPause(ax, score);
             else
-
-              plotscene(fig, land_dimensions, car, obstacles, ...
-                      score, best_score, winning_score, bg);
-
+                delete(hMsg);
             end
 
         end
@@ -271,6 +247,7 @@ function [score, game_result] = playGame( ...
         if paused
 
             pause(0.05);
+            t_last = tic;
             continue;
 
         end
@@ -303,21 +280,25 @@ function [score, game_result] = playGame( ...
 
             for j = 1:n
 
-                % Bigger obstacles
+                % Random obstacle type, then size from the image ratio
+                type = randi(3);
                 w = 8 + 6 * rand;
-                h = 8 + 6 * rand;
+                h = w * tex.obs{type}.ratio;
 
-                % IMPORTANT:
                 % Obstacles stay completely inside the road
                 x = -40 + w/2 + rand * (80 - w);
 
-                % Random obstacle type
-                type = randi(3);
+                y = 100 + h/2;
 
-                obstacles(end+1, :) = ...
-                    [x, 100 + h/2, w, h, type];
+                hnd = image([x - w/2, x + w/2], [y - h/2, y + h/2], ...
+                            tex.obs{type}.img, 'Parent', ax, ...
+                            'AlphaData', tex.obs{type}.alpha);
+
+                obstacles(end+1, :) = [x, y, w, h, type, hnd];
 
             end
+
+            set(ax, 'YDir', 'normal');
 
         end
 
@@ -325,12 +306,21 @@ function [score, game_result] = playGame( ...
         % Move obstacles
         % ----------------------------------------------------
 
-        obstacles(:, 2) = obstacles(:, 2) - vy * dt;
-
-        % Remove obstacles below the screen
         if ~isempty(obstacles)
 
-            obstacles(obstacles(:, 2) < -15, :) = [];
+            obstacles(:, 2) = obstacles(:, 2) - vy * dt;
+
+            % Delete obstacles below the screen
+            gone = obstacles(:, 2) < -15;
+            delete(obstacles(gone, 6));
+            obstacles(gone, :) = [];
+
+            % Update the position of the remaining ones
+            for i = 1:size(obstacles, 1)
+                set(obstacles(i, 6), 'YData', ...
+                    [obstacles(i,2) - obstacles(i,4)/2, ...
+                     obstacles(i,2) + obstacles(i,4)/2]);
+            end
 
         end
 
@@ -365,14 +355,17 @@ function [score, game_result] = playGame( ...
         end
 
         % ----------------------------------------------------
-        % Draw
+        % Update of the scene
         % ----------------------------------------------------
 
-          plotscene(fig, land_dimensions, car, obstacles, ...
-                  score, best_score, winning_score, bg);
+        set(hCar, 'XData', ...
+            [car.pos(1) - car.size(1)/2, car.pos(1) + car.size(1)/2]);
 
+        set(hScore, 'String', sprintf( ...
+        'Score: %.1f / %.1f   |   Best: %.1f', ...
+        score, winning_score, best_score));
 
-        pause(dt);
+        drawnow;
 
     end
 
@@ -384,17 +377,17 @@ function [score, game_result] = playGame( ...
 
         if crashed
 
-            showEnd(fig, 'CRASH!', score, ...
+            showEnd(ax, 'CRASH!', score, ...
                     'You hit an obstacle.');
 
         elseif won
 
-            showEnd(fig, 'YOU WIN!', score, ...
+            showEnd(ax, 'YOU WIN!', score, ...
                     'You reached the target score!');
 
         elseif quit_game
 
-            showEnd(fig, 'GAME STOPPED', score, ...
+            showEnd(ax, 'GAME STOPPED', score, ...
                     'You stopped the game.');
 
         end
@@ -402,6 +395,46 @@ function [score, game_result] = playGame( ...
         pause(2);
 
     end
+
+end
+
+
+% ============================================================
+% Texture loading
+% ============================================================
+
+function t = loadTexture(file, fallback_color)
+
+    if exist(file, 'file')
+
+        [img, map, alpha] = imread(file);
+
+        if ~isempty(map)                       % Indexed PNG -> RGB
+            img = ind2rgb(img, map);
+        end
+
+        if size(img, 3) == 1                   % Grayscale -> RGB
+            img = repmat(img, [1 1 3]);
+        end
+
+        if isempty(alpha)                      % No transparency
+            alpha = ones(size(img, 1), size(img, 2));
+        else
+            alpha = double(alpha) / double(intmax(class(alpha)));
+        end
+
+    else
+
+        % Missing file: plain colored placeholder
+        warning('Texture "%s" not found, using a placeholder.', file);
+        img = repmat(reshape(fallback_color, 1, 1, 3), [8 8 1]);
+        alpha = ones(8, 8);
+
+    end
+
+    t.img   = flipud(img);                     % Flipped because YDir = 'normal'
+    t.alpha = flipud(alpha);
+    t.ratio = size(img, 1) / size(img, 2);     % height / width
 
 end
 
@@ -433,170 +466,119 @@ end
 
 
 % ============================================================
-% Draw game scene
+% Overlay (message screens drawn ON TOP of the scene)
+% lines = {y, text, fontsize, bold; ...}
+% Returns the handles so the overlay can be deleted afterwards.
 % ============================================================
 
+function h = showOverlay(ax, lines)
 
-function plotscene(fig, region, car, obs, ...
-                   score, best_score, winning_score, bg)
+    % Opaque light background (a 1x1 image stretched over the game area)
+    h = image([-50 50], [0 100], 0.95 * ones(1, 1, 3), 'Parent', ax);
 
-    figure(fig);
-    cla;
-    hold on;
+    for i = 1:size(lines, 1)
 
-    % --------------------------------------------------------
-    % Background (grass + road + markings + trees)
-    % --------------------------------------------------------
-
-    image([-50 50], [0 100], bg.img);
-    set(gca, 'YDir', 'normal');
-    axis(region);
-    axis square;
-
-    % --------------------------------------------------------
-    % Player car
-    % --------------------------------------------------------
-
-    % car.pos = centre de la voiture (comme dans checkCollision)
-    xs = [car.pos(1) - car.size(1)/2, car.pos(1) + car.size(1)/2];
-    ys = [car.pos(2) - car.size(2)/2, car.pos(2) + car.size(2)/2];
-
-    h_car = image(xs, ys, car.img);
-    set(h_car, 'AlphaData', car.alpha);   % transparence du PNG
-
-    % image() inverse l'axe Y : on le remet dans le bon sens
-    % (c'est pour ça que tu as fait flipud sur l'image)
-    set(gca, 'YDir', 'normal');
-    axis(region);
-
-
-    % --------------------------------------------------------
-    % Obstacles
-    % --------------------------------------------------------
-
-    for i = 1:size(obs, 1)
-
-        x = obs(i,1);
-        y = obs(i,2);
-        w = obs(i,3);
-        h = obs(i,4);
-        type = obs(i,5);
-
-        if type == 1
-
-            % CAR
-            rectangle( ...
-                'Position', [x-w/2 y-h/2 w h], ...
-                'FaceColor', 'r', ...
-                'EdgeColor', 'k', ...
-                'LineWidth', 2);
-
-            % Small windshield
-            rectangle( ...
-                'Position', ...
-                [x-w/2+1.5 y+1 w-3 2.5], ...
-                'FaceColor', [0.8 0.9 1], ...
-                'EdgeColor', 'none');
-
-        elseif type == 2
-
-            % ANIMAL
-            plot(x, y, 'o', ...
-                 'MarkerSize', 24, ...
-                 'MarkerFaceColor', [0.55 0.3 0.1], ...
-                 'MarkerEdgeColor', 'k', ...
-                 'LineWidth', 2);
-
-        elseif type == 3
-
-            % ROCK
-            plot(x, y, 'o', ...
-                 'MarkerSize', 22, ...
-                 'MarkerFaceColor', [0.4 0.4 0.4], ...
-                 'MarkerEdgeColor', 'k', ...
-                 'LineWidth', 2);
-
+        if lines{i,4}
+            weight = 'bold';
+        else
+            weight = 'normal';
         end
+
+        h(end+1) = text(0, lines{i,1}, lines{i,2}, ...
+            'Parent', ax, ...
+            'HorizontalAlignment', 'center', ...
+            'FontSize', lines{i,3}, ...
+            'FontWeight', weight);
 
     end
 
-    % --------------------------------------------------------
-    % Information
-    % --------------------------------------------------------
-
-    title(sprintf( ...
-        'CAR CRASH | Score: %.1f | Best: %.1f | Target: %.1f', ...
-        score, best_score, winning_score));
-
-    xlabel('LEFT / RIGHT = Move     P = Pause     Q = Quit');
-
-    hold off;
     drawnow;
 
 end
 
 
 % ============================================================
-% Rules screen
+% Clickable menu: rules + difficulty buttons
+% Returns 1..4 (difficulty) or 0 (Quit / window closed)
 % ============================================================
 
-function showRules(fig, difficulty, winning_score)
+function [d, h] = showMenu(fig, ax)
 
-    figure(fig);
-    cla;
+    lines = { ...
+        90, 'CAR CRASH', 28, true; ...
+        79, 'LEFT / RIGHT : move the car', 13, false; ...
+        72, 'Avoid the obstacles and survive to win', 13, false; ...
+        65, 'P : pause / resume     Q : stop the game', 13, false; ...
+        54, 'Choose a difficulty :', 16, true};
 
-    axis([-50 50 0 100]);
-    axis off;
+    h = showOverlay(ax, lines);
 
-    text(0, 82, 'CAR CRASH', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 28, ...
-        'FontWeight', 'bold');
+    names  = {'Easy', 'Medium', 'Hard', 'Impossible', 'Quit'};
+    rects  = {[-44 -2 38 48], [2 44 38 48], ...
+              [-44 -2 24 34], [2 44 24 34], [-15 15 6 14]};
+    colors = {[0.60 0.90 0.60], [0.95 0.90 0.50], ...
+              [0.98 0.70 0.45], [0.95 0.45 0.45], [0.80 0.80 0.80]};
 
-    names = {'Easy', 'Medium', 'Hard', 'Impossible'};
+    for k = 1:5
 
-    text(0, 70, ...
-        sprintf('Difficulty: %s', names{difficulty}), ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 16);
+        r = rects{k};
 
-    text(0, 55, 'RULES', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 18, ...
-        'FontWeight', 'bold');
+        h(end+1) = patch('Parent', ax, ...
+            'XData', [r(1) r(2) r(2) r(1)], ...
+            'YData', [r(3) r(3) r(4) r(4)], ...
+            'FaceColor', colors{k}, 'EdgeColor', 'k', 'LineWidth', 2);
 
-    text(0, 47, ...
-        'Avoid the obstacles.', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 14);
+        h(end+1) = text(mean(r(1:2)), mean(r(3:4)), names{k}, ...
+            'Parent', ax, ...
+            'HorizontalAlignment', 'center', ...
+            'VerticalAlignment', 'middle', ...
+            'FontSize', 14, 'FontWeight', 'bold');
 
-    text(0, 39, ...
-        sprintf('Survive %.0f seconds to win.', winning_score), ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 14);
+    end
 
-    text(0, 30, ...
-        'LEFT / RIGHT : Move the car', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 14);
-
-    text(0, 22, ...
-        'P : Pause / Resume', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 14);
-
-    text(0, 14, ...
-        'Q : Stop the game', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 14);
-
-    text(0, 5, ...
-        'Get ready!', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 16, ...
-        'FontWeight', 'bold');
-
+    set(ax, 'YDir', 'normal');
     drawnow;
+
+    % Wait for a click on a button
+    d = -1;
+
+    while d == -1 && ishandle(fig)
+
+        keys = getappdata(fig, 'keys');
+
+        if keys.quit
+            d = 0;
+            break;
+        end
+
+        click = getappdata(fig, 'click');
+
+        if ~isempty(click)
+
+            setappdata(fig, 'click', []);
+
+            for k = 1:5
+                r = rects{k};
+                if click(1) >= r(1) && click(1) <= r(2) && ...
+                   click(2) >= r(3) && click(2) <= r(4)
+                    d = k;
+                    break;
+                end
+            end
+
+            if d == 5            % "Quit" button
+                d = 0;
+            end
+
+        end
+
+        pause(0.02);
+
+    end
+
+    if d == -1                   % Window closed
+        d = 0;
+    end
 
 end
 
@@ -605,35 +587,15 @@ end
 % Pause screen
 % ============================================================
 
-function showPause(fig, score)
+function h = showPause(ax, score)
 
-    figure(fig);
-    cla;
+    lines = { ...
+        60, 'GAME PAUSED', 28, true; ...
+        45, sprintf('Score: %.1f', score), 16, false; ...
+        30, 'Press P to resume', 16, false; ...
+        20, 'Press Q to stop', 14, false};
 
-    axis([-50 50 0 100]);
-    axis off;
-
-    text(0, 60, 'GAME PAUSED', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 28, ...
-        'FontWeight', 'bold');
-
-    text(0, 45, ...
-        sprintf('Score: %.1f', score), ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 16);
-
-    text(0, 30, ...
-        'Press P to resume', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 16);
-
-    text(0, 20, ...
-        'Press Q to stop', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 14);
-
-    drawnow;
+    h = showOverlay(ax, lines);
 
 end
 
@@ -642,29 +604,14 @@ end
 % End screen
 % ============================================================
 
-function showEnd(fig, message, score, explanation)
+function h = showEnd(ax, message, score, explanation)
 
-    figure(fig);
-    cla;
+    lines = { ...
+        60, message, 30, true; ...
+        45, sprintf('Final score: %.1f', score), 18, false; ...
+        32, explanation, 14, false};
 
-    axis([-50 50 0 100]);
-    axis off;
-
-    text(0, 60, message, ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 30, ...
-        'FontWeight', 'bold');
-
-    text(0, 45, ...
-        sprintf('Final score: %.1f', score), ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 18);
-
-    text(0, 32, explanation, ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 14);
-
-    drawnow;
+    h = showOverlay(ax, lines);
 
 end
 
@@ -715,5 +662,17 @@ function onKeyUp(src, evt)
     end
 
     setappdata(src, 'keys', k);
+
+end
+
+% ============================================================
+% Mouse click
+% ============================================================
+
+function onMouseDown(src, ~)
+
+    ax = get(src, 'CurrentAxes');
+    cp = get(ax, 'CurrentPoint');
+    setappdata(src, 'click', cp(1, 1:2));
 
 end
