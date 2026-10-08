@@ -4,51 +4,17 @@ function carcrash
     clc; close all;
     graphics_toolkit('qt');
 
-    % Display the game title
-    disp('%%%%%%%%%%%%%%%%%%%%%');
-    disp('%     CAR CRASH     %');
-    disp('%%%%%%%%%%%%%%%%%%%%%');
-    fprintf('\n');
-
-    % Game rules
-    fprintf('RULES:\n');
-    fprintf('- Move the car with the LEFT and RIGHT arrow keys.\n');
-    fprintf('- Avoid the obstacles.\n');
-    fprintf('- The longer you survive, the higher your score.\n');
-    fprintf('- Reach the target score to win the game.\n');
-    fprintf('- Press P to pause/resume the game.\n');
-    fprintf('- Press Q to stop the game.\n');
-    fprintf('\n');
-
     best_score = 0;
-    play_again = true;
 
-    while play_again
+    while true
 
-        % Choose the difficulty
-        fprintf('Select difficulty. Options are:\n');
-        fprintf(' (1) Easy\n');
-        fprintf(' (2) Medium\n');
-        fprintf(' (3) Hard\n');
-        fprintf(' (4) Impossible\n');
+        % Start a new game (the difficulty is chosen in the window)
+        [score, game_result] = playGame(best_score);
 
-        fprintf('\n');
-        difficulty_selection = input('Your choice: ');
-        fprintf('\n');
-
-        % Check that the difficulty is valid
-        while isempty(difficulty_selection) || ...
-              ~ismember(difficulty_selection, [1 2 3 4])
-
-            fprintf('Please choose 1, 2, 3 or 4.\n');
-            difficulty_selection = input('Your choice: ');
-            fprintf('\n');
-
+        % The player clicked "Quit" (or closed the window)
+        if strcmp(game_result, 'exit')
+            break;
         end
-
-        % Start a new game
-        [score, game_result] = playGame( ...
-            difficulty_selection, best_score);
 
         % Display the result
         if strcmp(game_result, 'win')
@@ -77,19 +43,12 @@ function carcrash
 
         end
 
-        % Ask whether the player wants to replay
-        fprintf('\n');
-
-        answer = input('Replay ? (o/n) : ', 's');
-        fprintf('\n');
-
-        play_again = ~isempty(answer) && ...
-                     any(lower(answer(1)) == ['o' 'y']);
-
+        % Close the window, the menu comes back with the next game
         close all;
 
     end
 
+    close all;
     fprintf('Thanks for playing ! Best score : %.1f\n', best_score);
 
 end
@@ -99,8 +58,7 @@ end
 % Runs one game
 % ============================================================
 
-function [score, game_result] = playGame( ...
-    difficulty_selection, best_score)
+function [score, game_result] = playGame(best_score)
 
     % The complete game area
     land_dimensions = [-50 50 0 100];
@@ -123,55 +81,10 @@ function [score, game_result] = playGame( ...
     % [x, y, width, height, type, graphics handle]
     % type 1 = car; type 2 = animal; type 3 = rock
     obstacles = zeros(0, 6);
-
     spawn_timer = 0;
     score = 0;
-
     game_result = 'quit';
 
-    % --------------------------------------------------------
-    % Difficulty
-    % --------------------------------------------------------
-
-    switch difficulty_selection
-
-        case 1
-            % EASY
-            vy = 100;
-            spawn_min = 0.40;
-            spawn_max = 0.80;
-            n_max = 1;
-            winning_score = 10;
-
-        case 2
-            % MEDIUM
-            vy = 140;
-            spawn_min = 0.25;
-            spawn_max = 0.55;
-            n_max = 2;
-            winning_score = 12;
-
-        case 3
-            % HARD
-            vy = 180;
-            spawn_min = 0.15;
-            spawn_max = 0.40;
-            n_max = 3;
-            winning_score = 15;
-
-        case 4
-            % IMPOSSIBLE
-            vy = 220;
-            spawn_min = 0.10;
-            spawn_max = 0.30;
-            n_max = 3;
-            winning_score = 18;
-
-    end
-
-    % Random time before first obstacle
-    next_spawn = spawn_min + ...
-                 (spawn_max - spawn_min) * rand;
 
     % --------------------------------------------------------
     % Create game window
@@ -180,6 +93,7 @@ function [score, game_result] = playGame( ...
     fig = figure( ...
         'KeyPressFcn', @onKeyDown, ...
         'KeyReleaseFcn', @onKeyUp, ...
+        'WindowButtonDownFcn', @onMouseDown, ...
         'Name', 'Car Crash', ...
         'NumberTitle', 'off', ...
         'Resize', 'on');
@@ -189,6 +103,7 @@ function [score, game_result] = playGame( ...
                'right', false, ...
                'pause', false, ...
                'quit', false));
+    setappdata(fig, 'click', []);
 
     crashed = false;
     won = false;
@@ -225,12 +140,65 @@ function [score, game_result] = playGame( ...
               'VerticalAlignment', 'top');
 
     % --------------------------------------------------------
-    % Display rules
+    % Menu
     % --------------------------------------------------------
 
-    hMsg = showRules(ax, difficulty_selection, winning_score);
-    pause(2);
+    [difficulty_selection, hMsg] = showMenu(fig, ax);
+
+    if difficulty_selection == 0          % Quit / window closed
+        game_result = 'exit';
+        return;
+    end
+
     delete(hMsg);
+
+    % Forget any key pressed during the menu
+    setappdata(fig, 'keys', ...
+        struct('left', false, 'right', false, ...
+               'pause', false, 'quit', false));
+
+    % --------------------------------------------------------
+    % Difficulty
+    % --------------------------------------------------------
+
+    switch difficulty_selection
+
+        case 1
+            % EASY
+            vy = 60;
+            spawn_min = 0.40;
+            spawn_max = 0.80;
+            n_max = 1;
+            winning_score = 10;
+
+        case 2
+            % MEDIUM
+            vy = 100;
+            spawn_min = 0.25;
+            spawn_max = 0.55;
+            n_max = 2;
+            winning_score = 12;
+
+        case 3
+            % HARD
+            vy = 120;
+            spawn_min = 0.15;
+            spawn_max = 0.40;
+            n_max = 2;
+            winning_score = 15;
+
+        case 4
+            % IMPOSSIBLE
+            vy = 130;
+            spawn_min = 0.10;
+            spawn_max = 0.30;
+            n_max = 3;
+            winning_score = 18;
+
+    end
+
+    % Random time before first obstacle
+    next_spawn = spawn_min + (spawn_max - spawn_min) * rand;
 
     % --------------------------------------------------------
     % Main game loop
@@ -296,7 +264,7 @@ function [score, game_result] = playGame( ...
             40 - car.size(1)/2);
 
         % ----------------------------------------------------
-        % Spawn obstacles
+        % Spawn obstacles (without overlapping existing ones)
         % ----------------------------------------------------
 
         spawn_timer = spawn_timer + dt;
@@ -316,11 +284,22 @@ function [score, game_result] = playGame( ...
                 type = randi(3);
                 w = 8 + 6 * rand;
                 h = w * tex.obs{type}.ratio;
-
-                % Obstacles stay completely inside the road
-                x = -40 + w/2 + rand * (80 - w);
-
                 y = 100 + h/2;
+
+                % Try up to 10 random positions, keep the first free one
+                placed = false;
+                for attempt = 1:10
+                    x = -40 + w/2 + rand * (80 - w);
+                    if ~overlapsAny(x, y, w, h, obstacles, 4, 4)
+                        placed = true;
+                        break;
+                    end
+                end
+
+                % No free spot found: skip this obstacle
+                if ~placed
+                    continue;
+                end
 
                 hnd = image([x - w/2, x + w/2], [y - h/2, y + h/2], ...
                             tex.obs{type}.img, 'Parent', ax, ...
@@ -472,6 +451,24 @@ end
 
 
 % ============================================================
+% True if a new rectangle (x, y, w, h) overlaps an existing obstacle
+% mx / my = extra spacing required horizontally / vertically
+% ============================================================
+
+function bad = overlapsAny(x, y, w, h, obs, mx, my)
+
+    if isempty(obs)
+        bad = false;
+        return;
+    end
+
+    bad = any( abs(x - obs(:,1)) < (w + obs(:,3))/2 + mx & ...
+               abs(y - obs(:,2)) < (h + obs(:,4))/2 + my );
+
+end
+
+
+% ============================================================
 % Collision detection
 % ============================================================
 
@@ -530,25 +527,87 @@ end
 
 
 % ============================================================
-% Rules screen
+% Clickable menu: rules + difficulty buttons
+% Returns 1..4 (difficulty) or 0 (Quit / window closed)
 % ============================================================
 
-function h = showRules(ax, difficulty, winning_score)
-
-    names = {'Easy', 'Medium', 'Hard', 'Impossible'};
+function [d, h] = showMenu(fig, ax)
 
     lines = { ...
-        82, 'CAR CRASH', 28, true; ...
-        70, sprintf('Difficulty: %s', names{difficulty}), 16, false; ...
-        55, 'RULES', 18, true; ...
-        47, 'Avoid the obstacles.', 14, false; ...
-        39, sprintf('Survive %.0f seconds to win.', winning_score), 14, false; ...
-        30, 'LEFT / RIGHT : Move the car', 14, false; ...
-        22, 'P : Pause / Resume', 14, false; ...
-        14, 'Q : Stop the game', 14, false; ...
-         5, 'Get ready!', 16, true};
+        90, 'CAR CRASH', 28, true; ...
+        79, 'LEFT / RIGHT : move the car', 13, false; ...
+        72, 'Avoid the obstacles and survive to win', 13, false; ...
+        65, 'P : pause / resume     Q : stop the game', 13, false; ...
+        54, 'Choose a difficulty :', 16, true};
 
     h = showOverlay(ax, lines);
+
+    names  = {'Easy', 'Medium', 'Hard', 'Impossible', 'Quit'};
+    rects  = {[-44 -2 38 48], [2 44 38 48], ...
+              [-44 -2 24 34], [2 44 24 34], [-15 15 6 14]};
+    colors = {[0.60 0.90 0.60], [0.95 0.90 0.50], ...
+              [0.98 0.70 0.45], [0.95 0.45 0.45], [0.80 0.80 0.80]};
+
+    for k = 1:5
+
+        r = rects{k};
+
+        h(end+1) = patch('Parent', ax, ...
+            'XData', [r(1) r(2) r(2) r(1)], ...
+            'YData', [r(3) r(3) r(4) r(4)], ...
+            'FaceColor', colors{k}, 'EdgeColor', 'k', 'LineWidth', 2);
+
+        h(end+1) = text(mean(r(1:2)), mean(r(3:4)), names{k}, ...
+            'Parent', ax, ...
+            'HorizontalAlignment', 'center', ...
+            'VerticalAlignment', 'middle', ...
+            'FontSize', 14, 'FontWeight', 'bold');
+
+    end
+
+    set(ax, 'YDir', 'normal');
+    drawnow;
+
+    % Wait for a click on a button
+    d = -1;
+
+    while d == -1 && ishandle(fig)
+
+        keys = getappdata(fig, 'keys');
+
+        if keys.quit
+            d = 0;
+            break;
+        end
+
+        click = getappdata(fig, 'click');
+
+        if ~isempty(click)
+
+            setappdata(fig, 'click', []);
+
+            for k = 1:5
+                r = rects{k};
+                if click(1) >= r(1) && click(1) <= r(2) && ...
+                   click(2) >= r(3) && click(2) <= r(4)
+                    d = k;
+                    break;
+                end
+            end
+
+            if d == 5            % "Quit" button
+                d = 0;
+            end
+
+        end
+
+        pause(0.02);
+
+    end
+
+    if d == -1                   % Window closed
+        d = 0;
+    end
 
 end
 
@@ -632,5 +691,17 @@ function onKeyUp(src, evt)
     end
 
     setappdata(src, 'keys', k);
+
+end
+
+% ============================================================
+% Mouse click
+% ============================================================
+
+function onMouseDown(src, ~)
+
+    ax = get(src, 'CurrentAxes');
+    cp = get(ax, 'CurrentPoint');
+    setappdata(src, 'click', cp(1, 1:2));
 
 end
