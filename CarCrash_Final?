@@ -66,7 +66,9 @@ function [score, game_result] = playGame(best_score)
     % Loading all textures once
     % If a file is missing, a plain colored placeholder is used
 
-    tex.menu   = loadTexture('menu_background.png', [0.10 0.10 0.18]);
+    tex.menu   = loadTexture('menu_background.png',  [0.10 0.10 0.18]);
+    tex.pause  = loadTexture('pause_background.png', [0.10 0.10 0.18]);
+    tex.finish = loadTexture('end_background.png',   [0.10 0.10 0.18]);
     tex.bg     = loadTexture('background.png',       [0.25 0.25 0.25]);
     tex.car    = loadTexture('car.png',              [0.10 0.30 0.80]);
     tex.obs{1} = loadTexture('obstacar.png',     [0.90 0.10 0.10]);
@@ -242,7 +244,7 @@ function [score, game_result] = playGame(best_score)
             setappdata(fig, 'keys', keys);
 
             if paused
-                hMsg = showPause(ax, score);
+                hMsg = showPause(ax, score, tex.pause);
             else
                 delete(hMsg);
             end
@@ -395,21 +397,8 @@ function [score, game_result] = playGame(best_score)
 
     if ishandle(fig)
 
-        if crashed
-
-            showEnd(ax, 'CRASH!', score, ...
-                    'You hit an obstacle.');
-
-        elseif won
-
-            showEnd(ax, 'YOU WIN!', score, ...
-                    'You reached the target score!');
-
-        elseif quit_game
-
-            showEnd(ax, 'GAME STOPPED', score, ...
-                    'You stopped the game.');
-
+        if crashed || won || quit_game
+            showEnd(ax, score, tex.finish);
         end
 
         pause(2);
@@ -563,13 +552,22 @@ end
 % ============================================================
 % Overlay (message screens drawn ON TOP of the scene)
 % lines = {y, text, fontsize, bold; ...}
+% bg_tex = texture used as the background of the screen
 % Returns the handles so the overlay can be deleted afterwards.
 % ============================================================
 
-function h = showOverlay(ax, lines)
+function h = showOverlay(ax, lines, bg_tex)
 
-    % Opaque light background (a 1x1 image stretched over the game area)
-    h = image([-50 50], [0 100], 0.95 * ones(1, 1, 3), 'Parent', ax);
+    % Background image, stretched over the game area
+    % (any transparency in the file is ignored)
+    h = image([-50 50], [0 100], bg_tex.img, 'Parent', ax);
+
+    % Dark semi-transparent layer so the white text stays readable
+    % (lower FaceAlpha for a lighter layer)
+    h(end+1) = patch('Parent', ax, ...
+        'XData', [-50 50 50 -50], ...
+        'YData', [0 0 100 100], ...
+        'FaceColor', 'k', 'FaceAlpha', 0.35, 'EdgeColor', 'none');
 
     for i = 1:size(lines, 1)
 
@@ -582,11 +580,13 @@ function h = showOverlay(ax, lines)
         h(end+1) = text(0, lines{i,1}, lines{i,2}, ...
             'Parent', ax, ...
             'HorizontalAlignment', 'center', ...
+            'Color', 'w', ...
             'FontSize', lines{i,3}, ...
             'FontWeight', weight);
 
     end
 
+    set(ax, 'YDir', 'normal');
     drawnow;
 
 end
@@ -614,11 +614,7 @@ function [d, h] = showMenu(fig, ax, menu_tex)
 
     % Title and rules, in white
     lines = { ...
-        90, 'CAR CRASH', 28, true; ...
-        79, 'LEFT / RIGHT : move the car', 13, false; ...
-        72, 'Avoid the obstacles and survive to win', 13, false; ...
-        65, 'P : pause / resume     Q : stop the game', 13, false; ...
-        50, '     Choose a difficulty :', 13, true};
+        54, 'Choose a difficulty :', 13, true};
 
     for i = 1:size(lines, 1)
 
@@ -711,15 +707,12 @@ end
 % Pause screen
 % ============================================================
 
-function h = showPause(ax, score)
+function h = showPause(ax, score, bg_tex)
 
     lines = { ...
-        60, 'GAME PAUSED', 28, true; ...
-        45, sprintf('Score: %.1f', score), 16, false; ...
-        30, 'Press P to resume', 16, false; ...
-        20, 'Press Q to stop', 14, false};
+        50, sprintf('Score: %.1f', score), 24, true};
 
-    h = showOverlay(ax, lines);
+    h = showOverlay(ax, lines, bg_tex);
 
 end
 
@@ -728,14 +721,12 @@ end
 % End screen
 % ============================================================
 
-function h = showEnd(ax, message, score, explanation)
+function h = showEnd(ax, score, bg_tex)
 
     lines = { ...
-        60, message, 30, true; ...
-        45, sprintf('Final score: %.1f', score), 18, false; ...
-        32, explanation, 14, false};
+        50, sprintf('Final score: %.1f', score), 24, true};
 
-    h = showOverlay(ax, lines);
+    h = showOverlay(ax, lines, bg_tex);
 
 end
 
