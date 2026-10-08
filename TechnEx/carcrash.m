@@ -4,6 +4,11 @@ function carcrash
     clc; close all;
     graphics_toolkit('qt');
 
+    % Every new figure will open at the screen size (also after "close all")
+    scr = get(0, 'ScreenSize');            % [1 1 width height] in pixels
+    set(0, 'DefaultFigureUnits', 'pixels');
+    set(0, 'DefaultFigurePosition', scr);
+
     best_score = 0;
 
     while true
@@ -90,13 +95,23 @@ function [score, game_result] = playGame(best_score)
     % Create game window
     % --------------------------------------------------------
 
-    fig = figure( ...
-        'KeyPressFcn', @onKeyDown, ...
-        'KeyReleaseFcn', @onKeyUp, ...
-        'WindowButtonDownFcn', @onMouseDown, ...
-        'Name', 'Car Crash', ...
-        'NumberTitle', 'off', ...
-        'Resize', 'on');
+fig = figure( ...
+    'KeyPressFcn', @onKeyDown, ...
+    'KeyReleaseFcn', @onKeyUp, ...
+    'WindowButtonDownFcn', @onMouseDown, ...
+    'Name', 'Car Crash', ...
+    'NumberTitle', 'off', ...
+    'MenuBar', 'none', ...
+    'ToolBar', 'none', ...
+    'Resize', 'on');
+
+% Fullscreen / Max screen
+% Force the window to cover the whole screen
+scr = get(0, 'ScreenSize');
+set(fig, 'Units', 'pixels', 'Position', scr);
+drawnow;
+pause(0.2);                            % let the window manager apply it
+set(fig, 'Position', scr);             % re-apply in case it was reset
 
     setappdata(fig, 'keys', ...
         struct('left', false, ...
@@ -264,7 +279,7 @@ function [score, game_result] = playGame(best_score)
             40 - car.size(1)/2);
 
         % ----------------------------------------------------
-        % Spawn obstacles
+        % Spawn obstacles (without overlapping existing ones)
         % ----------------------------------------------------
 
         spawn_timer = spawn_timer + dt;
@@ -284,11 +299,22 @@ function [score, game_result] = playGame(best_score)
                 type = randi(3);
                 w = 8 + 6 * rand;
                 h = w * tex.obs{type}.ratio;
-
-                % Obstacles stay completely inside the road
-                x = -40 + w/2 + rand * (80 - w);
-
                 y = 100 + h/2;
+
+                % Try up to 10 random positions, keep the first free one
+                placed = false;
+                for attempt = 1:10
+                    x = -40 + w/2 + rand * (80 - w);
+                    if ~overlapsAny(x, y, w, h, obstacles, 4, 4)
+                        placed = true;
+                        break;
+                    end
+                end
+
+                % No free spot found: skip this obstacle
+                if ~placed
+                    continue;
+                end
 
                 hnd = image([x - w/2, x + w/2], [y - h/2, y + h/2], ...
                             tex.obs{type}.img, 'Parent', ax, ...
@@ -435,6 +461,24 @@ function t = loadTexture(file, fallback_color)
     t.img   = flipud(img);                     % Flipped because YDir = 'normal'
     t.alpha = flipud(alpha);
     t.ratio = size(img, 1) / size(img, 2);     % height / width
+
+end
+
+
+% ============================================================
+% True if a new rectangle (x, y, w, h) overlaps an existing obstacle
+% mx / my = extra spacing required horizontally / vertically
+% ============================================================
+
+function bad = overlapsAny(x, y, w, h, obs, mx, my)
+
+    if isempty(obs)
+        bad = false;
+        return;
+    end
+
+    bad = any( abs(x - obs(:,1)) < (w + obs(:,3))/2 + mx & ...
+               abs(y - obs(:,2)) < (h + obs(:,4))/2 + my );
 
 end
 
