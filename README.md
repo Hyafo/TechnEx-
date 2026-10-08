@@ -1,4 +1,3 @@
- ============================================================
 HOW TO PLAY ?
   -Download the "TechnEX" folder from https://github.com/Hyafo/TechnEx-
   -All assets and the executive file "carcrash.m" should be directly present in the folder
