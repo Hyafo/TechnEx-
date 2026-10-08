@@ -71,6 +71,7 @@ function [score, game_result] = playGame(best_score)
     tex.obs{1} = loadTexture('obstacar.png',     [0.90 0.10 0.10]);
     tex.obs{2} = loadTexture('deer.png',  [0.55 0.30 0.10]);
     tex.obs{3} = loadTexture('rock.png',    [0.40 0.40 0.40]);
+    tex.menu   = loadTexture('menu.png',    [0.25 0.25 0.25]);
 
     % Player car
     car.size = [6, 6 * tex.car.ratio];   % Width and height
