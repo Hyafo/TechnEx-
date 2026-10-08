@@ -1,8 +1,8 @@
-% ============================================================ 
+% ============================================================
 % GOAL :
 %  -Try to survive the road trip without touching any obstacle until the score reaches
-%  the target of the chosen difficulty. 
-% 
+%  the target of the chosen difficulty.
+%
 % RULES :
 %  - Touching any obstacle (car, deer or rock) = CRASH, game over.
 %  - Reaching the winning score = WIN.
@@ -17,14 +17,14 @@
 %  - Q : Quit game
 %  - Mouse click : choosing the difficulty and quit in the menu
 %
-% GAME COMPONENTS : 
+% GAME COMPONENTS :
 %  - Menu : Rules + 4 difficulties + quit button
 %  - Scene : figure, axes (game area [-50 50 0 100]), static background, player car, score text
 %  - Obstacles : 3 types (1 = car, 2 = deer, 3 = rock), random width 8-14
 %  - Overlays : pause screen and end screen (win / crash / stop)
 %  - Sub-functions : playGame, loadTexture, overlapsAny, corridorExists, checkCollision, showOverlay,
 %   showMenu, showPause, showEnd, onKeyDown, onKeyUp, onMouseDown
-% 
+%
 % VARIABLES :
 %   best_score        best score of the session (kept between games)
 %   score             time survived in the current game (s)
@@ -70,13 +70,13 @@
 %     and prints the final best score. The best score is not
 %     saved to a file, so it is lost when the program ends.
 %
-% Octave version : 
+% Octave version :
 %  - Octave-11.3.0
 %
 % Souces :
 %  - adobestock and shutterstock images, Claude AI
 %
-% Contributions : 
+% Contributions :
 %  - All members of the group participated equally in the developpment of the script and creation of the game
 %
 % Author : Eloise Guillard, Alexandre Milou, Jade PRATOUSSY      Date : From the 01/10/2026 to the 08/10/2026
@@ -657,15 +657,7 @@ end
 function h = showOverlay(ax, lines, bg_tex)
 
     % Background image, stretched over the game area
-    % (any transparency in the file is ignored)
     h = image([-50 50], [0 100], bg_tex.img, 'Parent', ax);
-
-    % Dark semi-transparent layer so the white text stays readable
-    % (lower FaceAlpha for a lighter layer)
-    h(end+1) = patch('Parent', ax, ...
-        'XData', [-50 50 50 -50], ...
-        'YData', [0 0 100 100], ...
-        'FaceColor', 'k', 'FaceAlpha', 0.35, 'EdgeColor', 'none');
 
     for i = 1:size(lines, 1)
 
@@ -700,15 +692,6 @@ function [d, h] = showMenu(fig, ax, menu_tex)
     % Menu background image, stretched over the whole game area
     % (any transparency in the file is ignored)
     h = image([-50 50], [0 100], menu_tex.img, 'Parent', ax);
-
-    % Dark semi-transparent layer so the text stays readable
-    % (a patch handles transparency more reliably than a 1x1 image).
-    % Lower FaceAlpha for a lighter layer, or delete these lines
-    % if your image is already dark.
-    h(end+1) = patch('Parent', ax, ...
-        'XData', [-50 50 50 -50], ...
-        'YData', [0 0 100 100], ...
-        'FaceColor', 'k', 'FaceAlpha', 0.35, 'EdgeColor', 'none');
 
     % Title and rules, in white
     lines = { ...
