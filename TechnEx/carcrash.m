@@ -1,13 +1,93 @@
+% ============================================================
+% GOAL :
+%  -Try to survive the road trip without touching any obstacle until the score reaches
+%  the target of the chosen difficulty.
+%
+% RULES :
+%  - Touching any obstacle (car, deer or rock) = CRASH, game over.
+%  - Reaching the winning score = WIN.
+%  - Winning score: Easy 10 | Medium 12 | Hard 15 | Impossible 18.
+%  - Difficulty sets the obstacle speed (vy), the delay between spawns (spawn_min..spawn_max) and the max number of obstacles per spawn (n_max).
+%  - Fairness rules for spawning: obstacles never overlap (4 units of spacing), and a free corridor wider than the car (+3 units)
+%   must always remain, so every situation is passable.
+%
+% WAYS TO MOVE / CONTROLS :
+%  - LEFT / RIGHT arrow keys : move the car horizontally (80 units/s).
+%  - P : Pause / Resume
+%  - Q : Quit game
+%  - Mouse click : choosing the difficulty and quit in the menu
+%
+% GAME COMPONENTS :
+%  - Menu : Rules + 4 difficulties + quit button
+%  - Scene : figure, axes (game area [-50 50 0 100]), static background, player car, score text
+%  - Obstacles : 3 types (1 = car, 2 = deer, 3 = rock), random width 8-14
+%  - Overlays : pause screen and end screen (win / crash / stop)
+%  - Sub-functions : playGame, loadTexture, overlapsAny, corridorExists, checkCollision, showOverlay,
+%   showMenu, showPause, showEnd, onKeyDown, onKeyUp, onMouseDown
+%
+% VARIABLES :
+%   best_score        best score of the session (kept between games)
+%   score             time survived in the current game (s)
+%   game_result       'win' | 'crash' | 'quit' | 'exit'
+%   land_dimensions   game area [xmin xmax ymin ymax]
+%   tex               textures (img, alpha, ratio) of each element
+%   car.size / .pos / .v   car size, position [x; y], speed
+%   obstacles         matrix, one row per obstacle:
+%                     [x, y, width, height, type, graphics handle]
+%   spawn_timer, next_spawn   time since last spawn / random delay
+%   vy, spawn_min, spawn_max, n_max, winning_score   difficulty
+%   corridor_extra    extra free room required around the car
+%   keys              struct of key states (left, right, pause, quit)
+%   click             last mouse click position in the axes
+%   crashed, won, paused, quit_game   state flags
+%   dt                real elapsed time per frame (capped at 0.05 s)
+%
+% MAIN LOOP (inside playGame, repeated while the window exists)
+%   1. Measure real elapsed time dt (so speed doesn't depend on
+%      the computer's performance).
+%   2. Read the keys; Q -> stop the game.
+%   3. P -> toggle pause (the loop idles while paused).
+%   4. Move the car with the arrows, clamped to the road.
+%   5. Update the spawn timer; when it exceeds next_spawn, create
+%      1 to n_max obstacles above the screen (valid positions only).
+%   6. Move all obstacles down by vy*dt, delete those below the
+%      screen, update their graphics.
+%   7. Check collision (rectangle overlap) -> 'crash'.
+%   8. Add dt to the score; if score >= winning_score -> 'win'.
+%   9. Update the car and score text, then drawnow.
+%   After the loop: show the end screen for 2 seconds.
+%
+% ACROSS TRIALS (several games in a row)
+%   The function carcrash repeats: menu -> game -> result -> menu.
+%   - best_score is kept between games and passed to playGame to
+%     be shown on screen. It is only updated after a win or a
+%     crash (a stopped game does not count).
+%   - Each game creates a fresh window, textures, obstacles and
+%     score, so nothing carries over except best_score.
+%   - Each result is printed in the command window, with a
+%     "New best score!" message when it is beaten.
+%   - Clicking "Quit" (or closing the window) ends the program
+%     and prints the final best score. The best score is not
+%     saved to a file, so it is lost when the program ends.
+%
+% Octave version :
+%  - Octave-11.3.0
+%
+% Souces :
+%  - adobestock and shutterstock images, Claude AI
+%
+% Contributions :
+%  - All members of the group participated equally in the developpment of the script and creation of the game
+%
+% Author : Eloise Guillard, Alexandre Milou, Jade PRATOUSSY      Date : From the 01/10/2026 to the 08/10/2026
+% ============================================================
+
+
 function carcrash
 
     % Main function of the game
     clc; close all;
     graphics_toolkit('qt');
-
-    % Every new figure will open at the screen size (also after "close all")
-    scr = get(0, 'ScreenSize');            % [1 1 width height] in pixels
-    set(0, 'DefaultFigureUnits', 'pixels');
-    set(0, 'DefaultFigurePosition', scr);
 
     best_score = 0;
 
@@ -71,6 +151,9 @@ function [score, game_result] = playGame(best_score)
     % Loading all textures once
     % If a file is missing, a plain colored placeholder is used
 
+    tex.menu   = loadTexture('menu_background.png',  [0.10 0.10 0.18]);
+    tex.pause  = loadTexture('pause_background.png', [0.10 0.10 0.18]);
+    tex.finish = loadTexture('end_background.png',   [0.10 0.10 0.18]);
     tex.bg     = loadTexture('background.png',       [0.25 0.25 0.25]);
     tex.car    = loadTexture('car.png',              [0.10 0.30 0.80]);
     tex.obs{1} = loadTexture('obstacar.png',     [0.90 0.10 0.10]);
@@ -95,23 +178,13 @@ function [score, game_result] = playGame(best_score)
     % Create game window
     % --------------------------------------------------------
 
-fig = figure( ...
-    'KeyPressFcn', @onKeyDown, ...
-    'KeyReleaseFcn', @onKeyUp, ...
-    'WindowButtonDownFcn', @onMouseDown, ...
-    'Name', 'Car Crash', ...
-    'NumberTitle', 'off', ...
-    'MenuBar', 'none', ...
-    'ToolBar', 'none', ...
-    'Resize', 'on');
-
-% Fullscreen / Max screen
-% Force the window to cover the whole screen
-scr = get(0, 'ScreenSize');
-set(fig, 'Units', 'pixels', 'Position', scr);
-drawnow;
-pause(0.2);                            % let the window manager apply it
-set(fig, 'Position', scr);             % re-apply in case it was reset
+    fig = figure( ...
+        'KeyPressFcn', @onKeyDown, ...
+        'KeyReleaseFcn', @onKeyUp, ...
+        'WindowButtonDownFcn', @onMouseDown, ...
+        'Name', 'Car Crash', ...
+        'NumberTitle', 'off', ...
+        'Resize', 'on');
 
     setappdata(fig, 'keys', ...
         struct('left', false, ...
@@ -158,7 +231,7 @@ set(fig, 'Position', scr);             % re-apply in case it was reset
     % Menu
     % --------------------------------------------------------
 
-    [difficulty_selection, hMsg] = showMenu(fig, ax);
+    [difficulty_selection, hMsg] = showMenu(fig, ax, tex.menu);
 
     if difficulty_selection == 0          % Quit / window closed
         game_result = 'exit';
@@ -188,7 +261,7 @@ set(fig, 'Position', scr);             % re-apply in case it was reset
 
         case 2
             % MEDIUM
-            vy = 100;
+            vy = 90;
             spawn_min = 0.25;
             spawn_max = 0.55;
             n_max = 2;
@@ -196,7 +269,7 @@ set(fig, 'Position', scr);             % re-apply in case it was reset
 
         case 3
             % HARD
-            vy = 120;
+            vy = 110;
             spawn_min = 0.15;
             spawn_max = 0.40;
             n_max = 2;
@@ -205,15 +278,19 @@ set(fig, 'Position', scr);             % re-apply in case it was reset
         case 4
             % IMPOSSIBLE
             vy = 130;
-            spawn_min = 0.10;
+            spawn_min = 0.15;
             spawn_max = 0.30;
-            n_max = 3;
+            n_max = 2;
             winning_score = 18;
 
     end
 
     % Random time before first obstacle
     next_spawn = spawn_min + (spawn_max - spawn_min) * rand;
+
+    % Extra room left around the car in a free corridor
+    % (larger = easier game)
+    corridor_extra = 3;
 
     % --------------------------------------------------------
     % Main game loop
@@ -252,7 +329,7 @@ set(fig, 'Position', scr);             % re-apply in case it was reset
             setappdata(fig, 'keys', keys);
 
             if paused
-                hMsg = showPause(ax, score);
+                hMsg = showPause(ax, score, tex.pause);
             else
                 delete(hMsg);
             end
@@ -279,7 +356,8 @@ set(fig, 'Position', scr);             % re-apply in case it was reset
             40 - car.size(1)/2);
 
         % ----------------------------------------------------
-        % Spawn obstacles (without overlapping existing ones)
+        % Spawn obstacles (no overlap, and a free corridor
+        % wide enough for the car must always remain)
         % ----------------------------------------------------
 
         spawn_timer = spawn_timer + dt;
@@ -301,17 +379,20 @@ set(fig, 'Position', scr);             % re-apply in case it was reset
                 h = w * tex.obs{type}.ratio;
                 y = 100 + h/2;
 
-                % Try up to 10 random positions, keep the first free one
+                % Try up to 10 random positions, keep the first valid one
                 placed = false;
                 for attempt = 1:10
                     x = -40 + w/2 + rand * (80 - w);
-                    if ~overlapsAny(x, y, w, h, obstacles, 4, 4)
+                    if ~overlapsAny(x, y, w, h, obstacles, 4, 4) && ...
+                       corridorExists(obstacles, x, y, w, h, ...
+                                      car.size(1), car.size(2), ...
+                                      corridor_extra)
                         placed = true;
                         break;
                     end
                 end
 
-                % No free spot found: skip this obstacle
+                % No valid spot found: skip this obstacle
                 if ~placed
                     continue;
                 end
@@ -403,18 +484,18 @@ set(fig, 'Position', scr);             % re-apply in case it was reset
 
         if crashed
 
-            showEnd(ax, 'CRASH!', score, ...
-                    'You hit an obstacle.');
+            showEnd(ax, 'YOU LOST', score, ...
+                    'You hit an obstacle.', tex.finish);
 
         elseif won
 
             showEnd(ax, 'YOU WIN!', score, ...
-                    'You reached the target score!');
+                    'You reached the target score!', tex.finish);
 
         elseif quit_game
 
             showEnd(ax, 'GAME STOPPED', score, ...
-                    'You stopped the game.');
+                    'You stopped the game.', tex.finish);
 
         end
 
@@ -427,9 +508,19 @@ end
 
 % ============================================================
 % Texture loading
+% Images are searched next to carcrash.m first, so the current
+% folder of Octave does not matter.
 % ============================================================
 
 function t = loadTexture(file, fallback_color)
+
+    % Full path of the image, in the folder of this script
+    folder = fileparts(mfilename('fullpath'));
+    full_path = fullfile(folder, file);
+
+    if exist(full_path, 'file')
+        file = full_path;
+    end
 
     if exist(file, 'file')
 
@@ -484,6 +575,53 @@ end
 
 
 % ============================================================
+% True if, after adding the candidate obstacle (x, y, w, h),
+% a free corridor wide enough for the car still exists.
+% Obstacles close in height are treated as one "wall", because
+% the car cannot fit between them vertically.
+% extra = additional room required around the car
+% ============================================================
+
+function ok = corridorExists(obs, x, y, w, h, car_w, car_h, extra)
+
+    % Obstacles in the same vertical band as the candidate
+    if isempty(obs)
+        xs = [];
+        ws = [];
+    else
+        near = abs(y - obs(:,2)) < (h + obs(:,4))/2 + car_h;
+        xs = obs(near, 1);
+        ws = obs(near, 3);
+    end
+
+    xs = [xs; x];
+    ws = [ws; w];
+
+    % Horizontal intervals occupied, sorted left to right
+    left  = xs - ws/2;
+    right = xs + ws/2;
+    [left, idx] = sort(left);
+    right = right(idx);
+
+    % Scan the road [-40, 40] and look for a gap wide enough
+    need = car_w + extra;
+    pos  = -40;
+    ok   = false;
+
+    for i = 1:numel(left)
+        if left(i) - pos >= need
+            ok = true;
+            return;
+        end
+        pos = max(pos, right(i));
+    end
+
+    ok = (40 - pos >= need);
+
+end
+
+
+% ============================================================
 % Collision detection
 % ============================================================
 
@@ -512,13 +650,14 @@ end
 % ============================================================
 % Overlay (message screens drawn ON TOP of the scene)
 % lines = {y, text, fontsize, bold; ...}
+% bg_tex = texture used as the background of the screen
 % Returns the handles so the overlay can be deleted afterwards.
 % ============================================================
 
-function h = showOverlay(ax, lines)
+function h = showOverlay(ax, lines, bg_tex)
 
-    % Opaque light background (a 1x1 image stretched over the game area)
-    h = image([-50 50], [0 100], 0.95 * ones(1, 1, 3), 'Parent', ax);
+    % Background image, stretched over the game area
+    h = image([-50 50], [0 100], bg_tex.img, 'Parent', ax);
 
     for i = 1:size(lines, 1)
 
@@ -531,35 +670,53 @@ function h = showOverlay(ax, lines)
         h(end+1) = text(0, lines{i,1}, lines{i,2}, ...
             'Parent', ax, ...
             'HorizontalAlignment', 'center', ...
+            'Color', 'w', ...
             'FontSize', lines{i,3}, ...
             'FontWeight', weight);
 
     end
 
+    set(ax, 'YDir', 'normal');
     drawnow;
 
 end
 
 
 % ============================================================
-% Clickable menu: rules + difficulty buttons
+% Clickable menu: background image + rules + difficulty buttons
 % Returns 1..4 (difficulty) or 0 (Quit / window closed)
 % ============================================================
 
-function [d, h] = showMenu(fig, ax)
+function [d, h] = showMenu(fig, ax, menu_tex)
 
+    % Menu background image, stretched over the whole game area
+    % (any transparency in the file is ignored)
+    h = image([-50 50], [0 100], menu_tex.img, 'Parent', ax);
+
+    % Title and rules, in white
     lines = { ...
-        90, 'CAR CRASH', 28, true; ...
-        79, 'LEFT / RIGHT : move the car', 13, false; ...
-        72, 'Avoid the obstacles and survive to win', 13, false; ...
-        65, 'P : pause / resume     Q : stop the game', 13, false; ...
-        54, 'Choose a difficulty :', 16, true};
+        54, '', 13, true};
 
-    h = showOverlay(ax, lines);
+    for i = 1:size(lines, 1)
+
+        if lines{i,4}
+            weight = 'bold';
+        else
+            weight = 'normal';
+        end
+
+        h(end+1) = text(0, lines{i,1}, lines{i,2}, ...
+            'Parent', ax, ...
+            'HorizontalAlignment', 'center', ...
+            'Color', 'w', ...
+            'FontSize', lines{i,3}, ...
+            'FontWeight', weight);
+
+    end
 
     names  = {'Easy', 'Medium', 'Hard', 'Impossible', 'Quit'};
-    rects  = {[-44 -2 38 48], [2 44 38 48], ...
-              [-44 -2 24 34], [2 44 24 34], [-15 15 6 14]};
+    rects  = {[-44 -2 33 43], [2 44 33 43], ...
+              [-44 -2 19 29], [2 44 19 29], [-15 15 6 14]};
     colors = {[0.60 0.90 0.60], [0.95 0.90 0.50], ...
               [0.98 0.70 0.45], [0.95 0.45 0.45], [0.80 0.80 0.80]};
 
@@ -631,15 +788,12 @@ end
 % Pause screen
 % ============================================================
 
-function h = showPause(ax, score)
+function h = showPause(ax, score, bg_tex)
 
     lines = { ...
-        60, 'GAME PAUSED', 28, true; ...
-        45, sprintf('Score: %.1f', score), 16, false; ...
-        30, 'Press P to resume', 16, false; ...
-        20, 'Press Q to stop', 14, false};
+        50, sprintf('Score: %.1f', score), 24, true};
 
-    h = showOverlay(ax, lines);
+    h = showOverlay(ax, lines, bg_tex);
 
 end
 
@@ -648,14 +802,14 @@ end
 % End screen
 % ============================================================
 
-function h = showEnd(ax, message, score, explanation)
+function h = showEnd(ax, message, score, explanation, bg_tex)
 
     lines = { ...
-        60, message, 30, true; ...
-        45, sprintf('Final score: %.1f', score), 18, false; ...
-        32, explanation, 14, false};
+        62, message, 30, true; ...
+        48, sprintf('Final score: %.1f', score), 24, true; ...
+        36, explanation, 14, false};
 
-    h = showOverlay(ax, lines);
+    h = showOverlay(ax, lines, bg_tex);
 
 end
 
