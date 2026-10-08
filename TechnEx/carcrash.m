@@ -185,6 +185,15 @@ function [score, game_result] = playGame(best_score)
         'Name', 'Car Crash', ...
         'NumberTitle', 'off', ...
         'Resize', 'on');
+    % --------------------------------------------------------
+    % Full screen window
+    % --------------------------------------------------------
+
+    % Window covering the whole screen (applied again for every new game)
+    set(fig, 'MenuBar', 'none', 'ToolBar', 'none');
+    scr = get(0, 'screensize');                  % [1 1 largeur hauteur]
+    set(fig, 'Units', 'pixels', 'Position', scr);
+    drawnow;
 
     setappdata(fig, 'keys', ...
         struct('left', false, ...
@@ -197,6 +206,7 @@ function [score, game_result] = playGame(best_score)
     won = false;
     paused = false;
     quit_game = false;
+
 
     % --------------------------------------------------------
     % Creating the scene (axes, background, car, title)
