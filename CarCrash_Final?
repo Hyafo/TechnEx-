@@ -397,8 +397,21 @@ function [score, game_result] = playGame(best_score)
 
     if ishandle(fig)
 
-        if crashed || won || quit_game
-            showEnd(ax, score, tex.finish);
+        if crashed
+
+            showEnd(ax, 'YOU LOST', score, ...
+                    'You hit an obstacle.', tex.finish);
+
+        elseif won
+
+            showEnd(ax, 'YOU WIN!', score, ...
+                    'You reached the target score!', tex.finish);
+
+        elseif quit_game
+
+            showEnd(ax, 'GAME STOPPED', score, ...
+                    'You stopped the game.', tex.finish);
+
         end
 
         pause(2);
@@ -614,7 +627,7 @@ function [d, h] = showMenu(fig, ax, menu_tex)
 
     % Title and rules, in white
     lines = { ...
-        54, 'Choose a difficulty :', 13, true};
+        54, '', 13, true};
 
     for i = 1:size(lines, 1)
 
@@ -721,10 +734,12 @@ end
 % End screen
 % ============================================================
 
-function h = showEnd(ax, score, bg_tex)
+function h = showEnd(ax, message, score, explanation, bg_tex)
 
     lines = { ...
-        50, sprintf('Final score: %.1f', score), 24, true};
+        62, message, 30, true; ...
+        48, sprintf('Final score: %.1f', score), 24, true; ...
+        36, explanation, 14, false};
 
     h = showOverlay(ax, lines, bg_tex);
 
