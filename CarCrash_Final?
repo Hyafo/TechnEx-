@@ -66,12 +66,12 @@ function [score, game_result] = playGame(best_score)
     % Loading all textures once
     % If a file is missing, a plain colored placeholder is used
 
+    tex.menu   = loadTexture('menu_background.png', [0.10 0.10 0.18]);
     tex.bg     = loadTexture('background.png',       [0.25 0.25 0.25]);
     tex.car    = loadTexture('car.png',              [0.10 0.30 0.80]);
     tex.obs{1} = loadTexture('obstacar.png',     [0.90 0.10 0.10]);
     tex.obs{2} = loadTexture('deer.png',  [0.55 0.30 0.10]);
     tex.obs{3} = loadTexture('rock.png',    [0.40 0.40 0.40]);
-    tex.menu   = loadTexture('menu.png',    [0.25 0.25 0.25]);
 
     % Player car
     car.size = [6, 6 * tex.car.ratio];   % Width and height
@@ -144,7 +144,7 @@ function [score, game_result] = playGame(best_score)
     % Menu
     % --------------------------------------------------------
 
-    [difficulty_selection, hMsg] = showMenu(fig, ax);
+    [difficulty_selection, hMsg] = showMenu(fig, ax, tex.menu);
 
     if difficulty_selection == 0          % Quit / window closed
         game_result = 'exit';
@@ -421,9 +421,19 @@ end
 
 % ============================================================
 % Texture loading
+% Images are searched next to carcrash.m first, so the current
+% folder of Octave does not matter.
 % ============================================================
 
 function t = loadTexture(file, fallback_color)
+
+    % Full path of the image, in the folder of this script
+    folder = fileparts(mfilename('fullpath'));
+    full_path = fullfile(folder, file);
+
+    if exist(full_path, 'file')
+        file = full_path;
+    end
 
     if exist(file, 'file')
 
@@ -583,12 +593,26 @@ end
 
 
 % ============================================================
-% Clickable menu: rules + difficulty buttons
+% Clickable menu: background image + rules + difficulty buttons
 % Returns 1..4 (difficulty) or 0 (Quit / window closed)
 % ============================================================
 
-function [d, h] = showMenu(fig, ax)
+function [d, h] = showMenu(fig, ax, menu_tex)
 
+    % Menu background image, stretched over the whole game area
+    % (any transparency in the file is ignored)
+    h = image([-50 50], [0 100], menu_tex.img, 'Parent', ax);
+
+    % Dark semi-transparent layer so the text stays readable
+    % (a patch handles transparency more reliably than a 1x1 image).
+    % Lower FaceAlpha for a lighter layer, or delete these lines
+    % if your image is already dark.
+    h(end+1) = patch('Parent', ax, ...
+        'XData', [-50 50 50 -50], ...
+        'YData', [0 0 100 100], ...
+        'FaceColor', 'k', 'FaceAlpha', 0.35, 'EdgeColor', 'none');
+
+    % Title and rules, in white
     lines = { ...
         90, 'CAR CRASH', 28, true; ...
         79, 'LEFT / RIGHT : move the car', 13, false; ...
@@ -596,7 +620,22 @@ function [d, h] = showMenu(fig, ax)
         65, 'P : pause / resume     Q : stop the game', 13, false; ...
         54, 'Choose a difficulty :', 16, true};
 
-    h = showOverlay(ax, lines);
+    for i = 1:size(lines, 1)
+
+        if lines{i,4}
+            weight = 'bold';
+        else
+            weight = 'normal';
+        end
+
+        h(end+1) = text(0, lines{i,1}, lines{i,2}, ...
+            'Parent', ax, ...
+            'HorizontalAlignment', 'center', ...
+            'Color', 'w', ...
+            'FontSize', lines{i,3}, ...
+            'FontWeight', weight);
+
+    end
 
     names  = {'Easy', 'Medium', 'Hard', 'Impossible', 'Quit'};
     rects  = {[-44 -2 38 48], [2 44 38 48], ...
