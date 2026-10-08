@@ -356,8 +356,7 @@ function [score, game_result] = playGame(best_score)
             40 - car.size(1)/2);
 
         % ----------------------------------------------------
-        % Spawn obstacles (no overlap, and a free corridor
-        % wide enough for the car must always remain)
+        % Spawn obstacles (no overlap, and a free corridor (wide enough for the car)
         % ----------------------------------------------------
 
         spawn_timer = spawn_timer + dt;
@@ -392,7 +391,7 @@ function [score, game_result] = playGame(best_score)
                     end
                 end
 
-                % No valid spot found: skip this obstacle
+                % If there is no valid spot found, the obstacle is skipped
                 if ~placed
                     continue;
                 end
@@ -507,9 +506,7 @@ end
 
 
 % ============================================================
-% Texture loading
-% Images are searched next to carcrash.m first, so the current
-% folder of Octave does not matter.
+% Texture loading, and the images are searched next to the game file
 % ============================================================
 
 function t = loadTexture(file, fallback_color)
@@ -542,7 +539,7 @@ function t = loadTexture(file, fallback_color)
 
     else
 
-        % Missing file: plain colored placeholder
+        % Missing file: plain colored placeholder (as said previously)
         warning('Texture "%s" not found, using a placeholder.', file);
         img = repmat(reshape(fallback_color, 1, 1, 3), [8 8 1]);
         alpha = ones(8, 8);
@@ -558,7 +555,7 @@ end
 
 % ============================================================
 % True if a new rectangle (x, y, w, h) overlaps an existing obstacle
-% mx / my = extra spacing required horizontally / vertically
+% mx and my are for extra spacing required horizontally or vertically
 % ============================================================
 
 function bad = overlapsAny(x, y, w, h, obs, mx, my)
@@ -575,11 +572,9 @@ end
 
 
 % ============================================================
-% True if, after adding the candidate obstacle (x, y, w, h),
-% a free corridor wide enough for the car still exists.
-% Obstacles close in height are treated as one "wall", because
-% the car cannot fit between them vertically.
-% extra = additional room required around the car
+% After adding the obstacle (x, y, w, h) the corridor must still be wide enough for the car to fit
+% Obstacles close in height are treated as one "wall", because the car cannot fit between them.
+% "extra" is the additional room required around the car
 % ============================================================
 
 function ok = corridorExists(obs, x, y, w, h, car_w, car_h, extra)
@@ -651,7 +646,6 @@ end
 % Overlay (message screens drawn ON TOP of the scene)
 % lines = {y, text, fontsize, bold; ...}
 % bg_tex = texture used as the background of the screen
-% Returns the handles so the overlay can be deleted afterwards.
 % ============================================================
 
 function h = showOverlay(ax, lines, bg_tex)
@@ -683,19 +677,18 @@ end
 
 
 % ============================================================
-% Clickable menu: background image + rules + difficulty buttons
+% Clickable menu: difficulty buttons
 % Returns 1..4 (difficulty) or 0 (Quit / window closed)
 % ============================================================
 
 function [d, h] = showMenu(fig, ax, menu_tex)
 
     % Menu background image, stretched over the whole game area
-    % (any transparency in the file is ignored)
     h = image([-50 50], [0 100], menu_tex.img, 'Parent', ax);
 
     % Title and rules, in white
     lines = { ...
-        54, '', 13, true};
+        54, '', 13, true}; %Without this line, strangeley, the difficulty blocks are suppressed. As it is working like this, we kept it.
 
     for i = 1:size(lines, 1)
 
@@ -720,6 +713,7 @@ function [d, h] = showMenu(fig, ax, menu_tex)
     colors = {[0.60 0.90 0.60], [0.95 0.90 0.50], ...
               [0.98 0.70 0.45], [0.95 0.45 0.45], [0.80 0.80 0.80]};
 
+    % The 5 buttons are drawn (difficulty + quit button)
     for k = 1:5
 
         r = rects{k};
@@ -740,7 +734,7 @@ function [d, h] = showMenu(fig, ax, menu_tex)
     set(ax, 'YDir', 'normal');
     drawnow;
 
-    % Wait for a click on a button
+    % Wait for a click on a button, checking if anything has changed
     d = -1;
 
     while d == -1 && ishandle(fig)
@@ -752,7 +746,7 @@ function [d, h] = showMenu(fig, ax, menu_tex)
             break;
         end
 
-        click = getappdata(fig, 'click');
+        click = getappdata(fig, 'click'); % Once a click occured, then finding which button was clicked on
 
         if ~isempty(click)
 
@@ -815,7 +809,7 @@ end
 
 
 % ============================================================
-% Key pressed
+% Key pressed, checking which key is pressed. The "setappdata" line allows the pressed key to be taken into account
 % ============================================================
 
 function onKeyDown(src, evt)
@@ -844,7 +838,7 @@ end
 
 
 % ============================================================
-% Key released
+% Key released, same as the previous block
 % ============================================================
 
 function onKeyUp(src, evt)
