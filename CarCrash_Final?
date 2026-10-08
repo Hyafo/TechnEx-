@@ -174,7 +174,7 @@ function [score, game_result] = playGame(best_score)
 
         case 2
             % MEDIUM
-            vy = 100;
+            vy = 90;
             spawn_min = 0.25;
             spawn_max = 0.55;
             n_max = 2;
@@ -182,7 +182,7 @@ function [score, game_result] = playGame(best_score)
 
         case 3
             % HARD
-            vy = 120;
+            vy = 110;
             spawn_min = 0.15;
             spawn_max = 0.40;
             n_max = 2;
@@ -191,9 +191,9 @@ function [score, game_result] = playGame(best_score)
         case 4
             % IMPOSSIBLE
             vy = 130;
-            spawn_min = 0.10;
+            spawn_min = 0.15;
             spawn_max = 0.30;
-            n_max = 3;
+            n_max = 2;
             winning_score = 18;
 
     end
